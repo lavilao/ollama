@@ -1,0 +1,48 @@
+name: Ollama Build for Goldmont Plus
+
+on: workflow_dispatch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          repository: ollama/ollama # Clone the Ollama repo
+          submodules: true
+
+      - name: Setup Go Environment
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22' # Use a recent Go version
+
+      - name: Install Dependencies
+        # Install necessary build tools, including C/C++ libraries used by CGo
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential libopenblas-dev
+
+      - name: Compile Ollama with Goldmont Plus Flags
+        run: |
+          # 1. Define the custom C/C++ flags that proved successful for Goldmont Plus
+          CUSTOM_CFLAGS="-march=goldmont-plus -mtune=goldmont-plus -O3 -DGGML_FMA=OFF -DGGML_F16C=OFF -DGGML_AVX=OFF -DGGML_AVX2=OFF -DGGML_BMI2=OFF -DGGML_AVX512=OFF -DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS"
+          
+          # 2. Tell Go to use these flags for C/C++ compilation (CGo)
+          export CGO_CFLAGS="$CUSTOM_CFLAGS"
+          export CGO_CXXFLAGS="$CUSTOM_CFLAGS"
+          
+          # 3. Compile the entire Ollama project
+          # Ollama's build system automatically applies these flags when compiling the bundled llama.cpp
+          # and links against the local OpenBLAS development library (libopenblas-dev).
+          go generate ./...
+          go build -ldflags "-s -w"
+
+      - name: Create Artifact
+        # The resulting binary is named 'ollama' in the current directory
+        run: |
+          tar -czvf ollama-goldmont-plus.tar.gz ollama
+          
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ollama-goldmont-plus
+          path: ollama-goldmont-plus.tar.gz
